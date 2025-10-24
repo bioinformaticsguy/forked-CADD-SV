@@ -1,0 +1,9 @@
+/annotations
+cadd-sv-1.1.2.sif
+dependencies.tar.gz
+/input
+/output
+.snakemake
+/beds
+
+/case* 
