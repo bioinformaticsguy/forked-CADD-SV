@@ -13,6 +13,7 @@ fi
 
 input_vcf="$1"
 lines_per_file="${2:-10000}"  # Default to 10000 if not provided
+chrom_len_file="$3"
 
 # Get base name without extension
 base=$(basename "$input_vcf" .vcf.gz)
@@ -27,6 +28,7 @@ bcftools query -f '%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n' "$input_vcf" \
   | grep -vE '_|random|alt|fix|hap|GL|KI' \
   | awk '$2 <= $3' \
   | sort -k1,1 -k2,2n \
+  | awk "BEGIN{while((getline<\"$chrom_len_file\")>0)len[\$1]=\$2} len[\$1] && \$3<=len[\$1]" \
   > "$bed_file"
 
 # Split BED file into chunks
