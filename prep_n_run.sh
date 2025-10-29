@@ -15,8 +15,21 @@ input_vcf="$1"
 lines_per_file="${2:-10000}"  # Default to 10000 if not provided
 chrom_len_file="$3"
 
+
+# If chromosome size file is not provided, download hg38.chrom.sizes and use it
+if [[ -z "$chrom_len_file" ]]; then
+    chrom_len_file="hg38.chrom.sizes"
+    if [[ ! -f "$chrom_len_file" ]]; then
+        echo "Chromosome size file not provided. Downloading hg38.chrom.sizes..."
+        wget -q http://hgdownload.cse.ucsc.edu/goldenpath/hg38/bigZips/hg38.chrom.sizes
+    else
+        echo "Using existing hg38.chrom.sizes file."
+    fi
+fi
+
 # Get base name without extension
 base=$(basename "$input_vcf" .vcf.gz)
+base_dir=$(dirname "$input_vcf")
 bed_file="input/${base}.bed"
 
 # Convert VCF to BED with filters
@@ -28,9 +41,20 @@ bcftools query -f '%CHROM\t%POS\t%INFO/END\t%INFO/SVTYPE\n' "$input_vcf" \
   | grep -vE '_|random|alt|fix|hap|GL|KI' \
   | awk '$2 <= $3' \
   | sort -k1,1 -k2,2n \
-  | awk "BEGIN{while((getline<\"$chrom_len_file\")>0)len[\$1]=\$2} len[\$1] && \$3<=len[\$1]" \
   > "$bed_file"
 
-# Split BED file into chunks
-echo "Splitting BED file into chunks of $lines_per_file lines..."
-split -l "$lines_per_file" "$bed_file" "input/id_${base}_part" --additional-suffix=.bed
+
+awk 'NR==FNR{a[$1]=$2; next} ($2 < $3) && ($3 <= a[$1])' "$chrom_len_file" "$bed_file" > "$base_dir/filtered.bed"
+mv "$base_dir/filtered.bed" "$bed_file"
+
+# Count lines in the filtered BED file
+bed_lines=$(wc -l < "$bed_file")
+
+if (( bed_lines >= lines_per_file )); then
+    echo "Splitting BED file into chunks of $lines_per_file lines..."
+    split -l "$lines_per_file" "$bed_file" "input/id_${base}_part" --additional-suffix=.bed
+    rm "$bed_file"
+else
+    echo "BED file has less than $lines_per_file lines. Renaming with id_ prefix."
+    mv "$bed_file" "input/id_${base}.bed"
+fi
